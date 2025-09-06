@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 import os
 import requests
+import random
 
 app = Flask(__name__)
 
@@ -20,14 +21,20 @@ PLAID_TO_APP_CATEGORIES = {
     "Groceries": "Shopping",
 }
 
-# Sandbox 이름 기반 fallback (optional, for testing)
+# Sandbox 이름 기반 fallback
 PLAID_NAME_TO_CATEGORY = {
     "Walmart": "Shopping",
     "Starbucks": "Restaurants",
     "Uber": "Travel",
     "McDonald's": "Restaurants",
     "Target": "Shopping",
+    "Plaid Sandbox": "Restaurants",
+    "Chase QuickPay": "Shopping",
+    "Rent Payment": "Housing",
 }
+
+# Random categories for sandbox fallback
+RANDOM_CATEGORIES = ["Restaurants", "Shopping", "Travel", "Housing", "Entertainment"]
 
 def get_transactions_from_plaid():
     """Plaid API에서 실제 트랜잭션 가져오기"""
@@ -37,15 +44,13 @@ def get_transactions_from_plaid():
         "client_id": PLAID_CLIENT_ID,
         "secret": PLAID_SECRET,
         "access_token": ACCESS_TOKEN,
-        "start_date": "2025-08-01",  # 필요에 맞게 설정
+        "start_date": "2025-08-01",
         "end_date": "2025-09-05",
     }
     response = requests.post(url, json=payload, headers=headers)
     data = response.json()
-
     transactions = data.get("transactions", [])
 
-    # 로그 확인용
     print("=== Plaid Transactions ===")
     for t in transactions:
         print(t)
@@ -55,7 +60,7 @@ def get_transactions_from_plaid():
 @app.route("/api/analysis/spending-pattern")
 def analyze_spending():
     plaid_transactions = get_transactions_from_plaid()
-
+    
     if not plaid_transactions:
         return jsonify({
             "topCategory": "Uncategorized",
@@ -68,30 +73,33 @@ def analyze_spending():
     emotional_spending_count = 0
 
     for tx in plaid_transactions:
-        # Plaid category 배열 가져오기
         plaid_category = tx.get("category")
+        name = tx.get("name", "")
+
         if plaid_category:
             category = PLAID_TO_APP_CATEGORIES.get(plaid_category[0], "Uncategorized")
+        elif name in PLAID_NAME_TO_CATEGORY:
+            category = PLAID_NAME_TO_CATEGORY[name]
         else:
-            # Sandbox fallback by name
-            category = PLAID_NAME_TO_CATEGORY.get(tx.get("name", ""), "Uncategorized")
+            # Sandbox fallback: random category
+            category = random.choice(RANDOM_CATEGORIES)
 
         amount = tx.get("amount", 0)
 
-        # 카테고리 합계
         spending_by_category[category] = spending_by_category.get(category, 0) + amount
 
-        # 감정 소비 조건 (Shopping, Restaurants, amount >= 100)
+        # 감정 소비
         if category in ["Shopping", "Restaurants"] and amount >= 100:
             emotional_spending_total += amount
             emotional_spending_count += 1
 
     top_category = max(spending_by_category, key=lambda k: spending_by_category[k]) if spending_by_category else "Uncategorized"
 
-    if emotional_spending_count > 0:
-        analysis_result = f"총 {emotional_spending_count}건의 감정 소비 패턴이 발견되었어요. (총액: ${emotional_spending_total:.2f})"
-    else:
-        analysis_result = "최근 감정 소비 패턴이 보이지 않아요. 잘하고 있어요!"
+    analysis_result = (
+        f"총 {emotional_spending_count}건의 감정 소비 패턴이 발견되었어요. (총액: ${emotional_spending_total:.2f})"
+        if emotional_spending_count > 0 else
+        "최근 감정 소비 패턴이 보이지 않아요. 잘하고 있어요!"
+    )
 
     return jsonify({
         "topCategory": top_category,
