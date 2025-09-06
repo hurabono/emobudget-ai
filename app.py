@@ -1,50 +1,50 @@
-from flask import Flask, request, jsonify
-import pandas as pd
+from flask import Flask, jsonify
 import os
+import requests
 
 app = Flask(__name__)
 
-# Plaid 카테고리를 앱 기준 카테고리로 매핑
-PLAID_TO_APP_CATEGORIES = {
-    "Food & Drink": "Restaurants",
-    "Restaurants": "Restaurants",
-    "Travel": "Travel",
-    "Shops": "Shopping",
-    "Groceries": "Shopping",
-    # 필요한 항목 추가
-}
+# Plaid API 설정
+PLAID_CLIENT_ID = os.environ.get("PLAID_CLIENT_ID")
+PLAID_SECRET = os.environ.get("PLAID_SECRET")
+PLAID_ENV = "sandbox"  # 또는 "development", "production"
+ACCESS_TOKEN = os.environ.get("PLAID_ACCESS_TOKEN")
 
-@app.route("/analyze", methods=["POST"])
+PLAID_BASE_URL = f"https://{PLAID_ENV}.plaid.com"
+
+def get_transactions_from_plaid():
+    """Plaid API에서 실제 트랜잭션 가져오기"""
+    url = f"{PLAID_BASE_URL}/transactions/get"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "client_id": PLAID_CLIENT_ID,
+        "secret": PLAID_SECRET,
+        "access_token": ACCESS_TOKEN,
+        "start_date": "2025-08-01",  # 필요에 맞게 설정
+        "end_date": "2025-09-05",
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    data = response.json()
+
+    # Plaid 트랜잭션 리스트 반환
+    return data.get("transactions", [])
+
+@app.route("/api/analysis/spending-pattern")
 def analyze_spending():
-    # Plaid 거래 데이터 받기
-    transactions_json = request.get_json()
-    df = pd.DataFrame(transactions_json)
+    plaid_transactions = get_transactions_from_plaid()
 
-    if df.empty:
-        return jsonify({"analysis_result": "분석할 거래 내역이 없습니다."})
+    spending_by_category = {}
+    for tx in plaid_transactions:
+        # Plaid는 category 배열 반환, 없으면 'Uncategorized'
+        category = tx.get("category", ["Uncategorized"])[0]
+        amount = tx.get("amount", 0)
+        spending_by_category[category] = spending_by_category.get(category, 0) + amount
 
-    # Plaid 카테고리를 앱 기준 카테고리로 변환
-    df['category'] = df['category'].map(PLAID_TO_APP_CATEGORIES).fillna('Uncategorized')
-
-    # 감정 소비 분석 (Shopping, Restaurants, 금액 >= 100)
-    emotional_spending = df[
-        (df['category'].isin(['Shopping', 'Restaurants'])) &
-        (df['amount'] >= 100.0)
-    ]
-
-    if not emotional_spending.empty:
-        count = len(emotional_spending)
-        total_amount = emotional_spending['amount'].sum()
-        analysis_result = f"총 {count}건의 감정 소비 패턴이 발견되었어요. (총액: ${total_amount:.2f})"
-    else:
-        analysis_result = "최근 감정 소비 패턴이 보이지 않아요. 잘하고 있어요!"
-
-    # 전체 카테고리 통계도 함께 보내기 (프론트엔드용)
-    category_summary = df.groupby('category')['amount'].sum().reset_index().to_dict(orient='records')
+    top_category = max(spending_by_category, key=lambda k: spending_by_category[k]) if spending_by_category else "Uncategorized"
 
     return jsonify({
-        "analysis_result": analysis_result,
-        "category_summary": category_summary
+        "topCategory": top_category,
+        "spendingByCategory": spending_by_category
     })
 
 if __name__ == "__main__":
