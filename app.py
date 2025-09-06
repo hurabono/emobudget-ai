@@ -66,19 +66,25 @@ def get_transactions_from_plaid(start_date="2025-08-01", end_date="2025-09-05"):
 def categorize_transactions(transactions):
     categorized = []
     for tx in transactions:
-        category_list = tx.get("category")
-        if category_list:
-            category = PLAID_TO_APP_CATEGORIES.get(category_list[0], "Uncategorized")
-        else:
-            category = PLAID_NAME_TO_CATEGORY.get(tx.get("name", ""), "Uncategorized")
+        category_list = tx.get("category", [])
+        category = "Other"  # default if nothing matches
 
-        if category != "Uncategorized":
-            categorized.append({
-                "name": tx.get("name"),
-                "amount": tx.get("amount", 0),
-                "date": tx.get("date"),
-                "category": category
-            })
+        # Check all category levels for mapping
+        for cat in category_list:
+            if cat in PLAID_TO_APP_CATEGORIES:
+                category = PLAID_TO_APP_CATEGORIES[cat]
+                break
+
+        # Fallback by name if no category matched
+        if category == "Other":
+            category = PLAID_NAME_TO_CATEGORY.get(tx.get("name", ""), "Other")
+
+        categorized.append({
+            "name": tx.get("name"),
+            "amount": tx.get("amount", 0),
+            "date": tx.get("date"),
+            "category": category
+        })
     return categorized
 
 
