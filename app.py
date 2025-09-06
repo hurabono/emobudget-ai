@@ -4,78 +4,62 @@ import requests
 
 app = Flask(__name__)
 
-# ----------------------------
-# Plaid API Configuration
-# ----------------------------
+# Plaid API 설정
 PLAID_CLIENT_ID = os.environ.get("PLAID_CLIENT_ID")
 PLAID_SECRET = os.environ.get("PLAID_SECRET")
 PLAID_ENV = os.environ.get("PLAID_ENV", "sandbox")  # sandbox / development / production
 ACCESS_TOKEN = os.environ.get("PLAID_ACCESS_TOKEN")
-
 PLAID_BASE_URL = f"https://{PLAID_ENV}.plaid.com"
 
-# Plaid category mapping to your app categories
+# Plaid 카테고리를 앱 기준 카테고리로 매핑
 PLAID_TO_APP_CATEGORIES = {
-    "Food & Drink": "Dining",
-    "Restaurants": "Dining",
+    "Food & Drink": "Restaurants",
+    "Restaurants": "Restaurants",
+    "Travel": "Travel",
     "Shops": "Shopping",
     "Groceries": "Shopping",
-    "Travel": "Travel",
-    # add more as needed
+    "Entertainment": "Entertainment",
+    "Health & Fitness": "Health",
 }
 
-# Sandbox fallback for testing
+# Sandbox 이름 기반 fallback
 PLAID_NAME_TO_CATEGORY = {
     "Walmart": "Shopping",
-    "Target": "Shopping",
-    "Starbucks": "Dining",
-    "McDonald's": "Dining",
+    "Starbucks": "Restaurants",
     "Uber": "Travel",
+    "McDonald's": "Restaurants",
+    "Target": "Shopping",
 }
 
-
-# ----------------------------
-# Helper: Fetch transactions from Plaid
-# ----------------------------
-def get_transactions_from_plaid(start_date="2025-08-01", end_date="2025-09-05"):
+def get_transactions_from_plaid():
+    """Plaid API에서 트랜잭션 가져오기"""
     url = f"{PLAID_BASE_URL}/transactions/get"
     headers = {"Content-Type": "application/json"}
     payload = {
         "client_id": PLAID_CLIENT_ID,
         "secret": PLAID_SECRET,
         "access_token": ACCESS_TOKEN,
-        "start_date": start_date,
-        "end_date": end_date,
+        "start_date": "2025-08-01",
+        "end_date": "2025-09-05",
     }
-
     response = requests.post(url, json=payload, headers=headers)
     data = response.json()
     transactions = data.get("transactions", [])
-
-    # Debug log
-    print("=== Plaid Transactions ===")
-    for t in transactions:
-        print(t)
-
     return transactions
 
-
-# ----------------------------
-# Helper: Map categories and filter out Uncategorized
-# ----------------------------
 def categorize_transactions(transactions):
     categorized = []
     for tx in transactions:
         category_list = tx.get("category", [])
-        category = "Other"  # default if nothing matches
+        category = "Other"  # 기본값
 
-        # Check all category levels for mapping
+        # 카테고리 배열 전체 확인
         for cat in category_list:
             if cat in PLAID_TO_APP_CATEGORIES:
                 category = PLAID_TO_APP_CATEGORIES[cat]
                 break
 
-        # Fallback by name if no category matched
+        # 이름 기반 fallback
         if category == "Other":
             category = PLAID_NAME_TO_CATEGORY.get(tx.get("name", ""), "Other")
 
@@ -87,40 +71,45 @@ def categorize_transactions(transactions):
         })
     return categorized
 
-
-# ----------------------------
-# API: Spending Analysis
-# ----------------------------
 @app.route("/api/analysis/spending-pattern")
 def analyze_spending():
-    transactions = get_transactions_from_plaid()
-    categorized_transactions = categorize_transactions(transactions)
+    plaid_transactions = get_transactions_from_plaid()
+    transactions = categorize_transactions(plaid_transactions)
 
-    if not categorized_transactions:
+    if not transactions:
         return jsonify({
-            "topCategory": None,
+            "topCategory": "Other",
             "spendingByCategory": {},
             "analysis_result": "거래 내역이 없습니다."
         })
 
-    # Calculate spending per category
     spending_by_category = {}
-    for tx in categorized_transactions:
-        cat = tx["category"]
-        spending_by_category[cat] = spending_by_category.get(cat, 0) + tx["amount"]
+    emotional_spending_total = 0
+    emotional_spending_count = 0
 
-    top_category = max(spending_by_category, key=spending_by_category.get)
+    for tx in transactions:
+        category = tx["category"]
+        amount = tx["amount"]
+
+        spending_by_category[category] = spending_by_category.get(category, 0) + amount
+
+        if category in ["Shopping", "Restaurants"] and amount >= 100:
+            emotional_spending_total += amount
+            emotional_spending_count += 1
+
+    top_category = max(spending_by_category, key=lambda k: spending_by_category[k])
+
+    if emotional_spending_count > 0:
+        analysis_result = f"총 {emotional_spending_count}건의 감정 소비 패턴이 발견되었어요. (총액: ${emotional_spending_total:.2f})"
+    else:
+        analysis_result = "최근 감정 소비 패턴이 보이지 않아요. 잘하고 있어요!"
 
     return jsonify({
         "topCategory": top_category,
         "spendingByCategory": spending_by_category,
-        "analysis_result": f"이번 달 가장 많이 지출한 카테고리는 '{top_category}' 입니다."
+        "analysis_result": analysis_result
     })
 
-
-# ----------------------------
-# Run Flask
-# ----------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
