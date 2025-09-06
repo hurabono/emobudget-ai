@@ -41,3 +41,23 @@ def analyze_spending():
 # 서버 실행 (기본 포트: 5000)
 if __name__ == "__main__":
     app.run(debug=True)
+
+
+
+app = Flask(__name__)
+
+# --- 진단을 위한 임시 코드 추가 ---
+@app.route("/")
+def hello():
+    return "AI 서버가 정상적으로 작동 중입니다!"
+# ------------------------------------
+
+# POST /analyze 엔드포인트 정의 (기존 코드는 그대로 둡니다)
+@app.route("/analyze", methods=["POST"])
+def analyze_spending():
+    # ... (기존 분석 코드는 변경할 필요 없음)
+    transactions_json = request.get_json()
+    # ...
+    return jsonify(analysis_result)
+
+# ... (if __name__ == "__main__": 부분도 그대로 둡니다)
