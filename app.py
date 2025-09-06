@@ -7,7 +7,7 @@ app = Flask(__name__)
 # Plaid API 설정
 PLAID_CLIENT_ID = os.environ.get("PLAID_CLIENT_ID")
 PLAID_SECRET = os.environ.get("PLAID_SECRET")
-PLAID_ENV = "sandbox"  # "development" 또는 "production"
+PLAID_ENV = os.environ.get("PLAID_ENV", "sandbox")  # sandbox / development / production
 ACCESS_TOKEN = os.environ.get("PLAID_ACCESS_TOKEN")
 PLAID_BASE_URL = f"https://{PLAID_ENV}.plaid.com"
 
@@ -18,7 +18,15 @@ PLAID_TO_APP_CATEGORIES = {
     "Travel": "Travel",
     "Shops": "Shopping",
     "Groceries": "Shopping",
-    # 필요하면 추가
+}
+
+# Sandbox 이름 기반 fallback (optional, for testing)
+PLAID_NAME_TO_CATEGORY = {
+    "Walmart": "Shopping",
+    "Starbucks": "Restaurants",
+    "Uber": "Travel",
+    "McDonald's": "Restaurants",
+    "Target": "Shopping",
 }
 
 def get_transactions_from_plaid():
@@ -34,7 +42,15 @@ def get_transactions_from_plaid():
     }
     response = requests.post(url, json=payload, headers=headers)
     data = response.json()
-    return data.get("transactions", [])
+
+    transactions = data.get("transactions", [])
+
+    # 로그 확인용
+    print("=== Plaid Transactions ===")
+    for t in transactions:
+        print(t)
+
+    return transactions
 
 @app.route("/api/analysis/spending-pattern")
 def analyze_spending():
@@ -52,10 +68,14 @@ def analyze_spending():
     emotional_spending_count = 0
 
     for tx in plaid_transactions:
-        # Plaid category 배열 가져오기, 없으면 Uncategorized
-        plaid_category = tx.get("category", ["Uncategorized"])[0]
-        # 앱 기준 카테고리로 매핑
-        category = PLAID_TO_APP_CATEGORIES.get(plaid_category, "Uncategorized")
+        # Plaid category 배열 가져오기
+        plaid_category = tx.get("category")
+        if plaid_category:
+            category = PLAID_TO_APP_CATEGORIES.get(plaid_category[0], "Uncategorized")
+        else:
+            # Sandbox fallback by name
+            category = PLAID_NAME_TO_CATEGORY.get(tx.get("name", ""), "Uncategorized")
+
         amount = tx.get("amount", 0)
 
         # 카테고리 합계
