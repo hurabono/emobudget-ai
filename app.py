@@ -6,6 +6,23 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
+CORS(app)  # 모든 도메인 허용 (개발용)
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    data = request.get_json()
+    
+
+    amount = data.get('amount', 0)
+    is_emotional = amount > 100  # 단순 예시
+    probability = min(amount / 500, 1)
+
+    result = {
+        "is_emotional": is_emotional,
+        "probability": probability
+    }
+    return jsonify(result)
+
 # -------------------------
 # 1. 학습된 모델 불러오기
 # -------------------------
