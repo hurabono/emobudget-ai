@@ -1,30 +1,18 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS  # ✅ Must import CORS
 import os
 import pandas as pd
 import joblib
-from datetime import datetime, timedelta
-
-app = Flask(__name__)
-
-CORS(app)  # 모든 도메인 허용 (개발용)
-
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    data = request.get_json()
-    
-
-    amount = data.get('amount', 0)
-    is_emotional = amount > 100  # 단순 예시
-    probability = min(amount / 500, 1)
-
-    result = {
-        "is_emotional": is_emotional,
-        "probability": probability
-    }
-    return jsonify(result)
+from datetime import datetime
 
 # -------------------------
-# 1. 학습된 모델 불러오기
+# 0. Flask app setup
+# -------------------------
+app = Flask(__name__)
+CORS(app)  # Allow all domains (dev only)
+
+# -------------------------
+# 1. Load trained model
 # -------------------------
 MODEL_PATH = "emotional_model.pkl"
 try:
@@ -35,7 +23,7 @@ except Exception as e:
     model = None
 
 # -------------------------
-# 2. 카테고리 매핑
+# 2. Category mapping
 # -------------------------
 PLAID_TO_APP_CATEGORIES = {
     "Food and Drink": "Restaurants",
@@ -46,6 +34,7 @@ PLAID_TO_APP_CATEGORIES = {
     "Entertainment": "Entertainment",
     "Health & Fitness": "Health",
 }
+
 PLAID_NAME_TO_CATEGORY = {
     "Walmart": "Shopping",
     "Starbucks": "Restaurants",
@@ -55,7 +44,7 @@ PLAID_NAME_TO_CATEGORY = {
 }
 
 # -------------------------
-# 3. 유틸 함수
+# 3. Helper function
 # -------------------------
 def categorize_transactions(transactions):
     categorized = []
@@ -79,20 +68,10 @@ def categorize_transactions(transactions):
     return categorized
 
 # -------------------------
-# 4. 감정 소비 예측 API
+# 4. Predict single transaction emotion
 # -------------------------
 @app.route("/predict_emotion", methods=["POST"])
 def predict_emotion():
-    """
-    단일 거래를 받아 감정소비 여부와 확률을 반환합니다.
-    예시 입력:
-    {
-      "amount": 20,
-      "hour": 23,
-      "day_of_week": 5,
-      "category": "Shopping"
-    }
-    """
     if not model:
         return jsonify({"error": "Model not available"}), 500
 
@@ -100,33 +79,30 @@ def predict_emotion():
     if not tx:
         return jsonify({"error": "No transaction data provided"}), 400
 
-    # DataFrame 변환
+    # Convert to DataFrame
     df = pd.DataFrame([tx])
 
-    # 카테고리 원핫 인코딩 (훈련 시 사용한 컬럼과 맞추기)
+    # One-hot encoding (match training columns)
     df = pd.get_dummies(df)
     for col in model.feature_names_in_:
         if col not in df:
             df[col] = 0
     df = df[model.feature_names_in_]
 
-    # 예측
-    prob = model.predict_proba(df)[0][1]  # 감정소비 확률
+    # Prediction
+    prob = model.predict_proba(df)[0][1]
     pred = model.predict(df)[0]
 
     return jsonify({
         "is_emotional": int(pred),
-        "probability": round(prob, 3)  # 소수점 3자리 (예: 0.823 → 82.3%)
+        "probability": round(prob, 3)
     })
 
 # -------------------------
-# 5. 전체 거래 분석 API (기존 분석)
+# 5. Analyze multiple transactions
 # -------------------------
-@app.route("/analyze", methods=["POST"])
+@app.route("/analyze_transactions", methods=["POST"])
 def analyze_transactions_endpoint():
-    """
-    거래 내역 리스트를 받아 카테고리별 집계 및 간단한 인사이트를 반환합니다.
-    """
     transactions_json = request.json
     if not transactions_json:
         return jsonify({
@@ -139,7 +115,7 @@ def analyze_transactions_endpoint():
     df = pd.DataFrame(transactions)
     df['datetime'] = pd.to_datetime(df['datetime'])
 
-    # 카테고리별 총 지출
+    # Total spending by category
     spending_by_category = df[df['amount'] > 0].groupby('category')['amount'].sum().to_dict()
     top_category = max(spending_by_category, key=spending_by_category.get, default="None")
 
@@ -152,7 +128,14 @@ def analyze_transactions_endpoint():
     })
 
 # -------------------------
-# 6. 서버 실행
+# 6. Simple test endpoint
+# -------------------------
+@app.route("/ping", methods=["GET"])
+def ping():
+    return jsonify({"status": "ok"})
+
+# -------------------------
+# 7. Run server
 # -------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
