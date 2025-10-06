@@ -17,7 +17,7 @@ def analyze_transactions(transactions):
         return {
             "topCategory": "None",
             "spendingByCategory": {},
-            "emotionalSpendingPattern": "분석할 거래 내역이 없습니다."
+            "emotionalSpendingPattern": "No transactions available for analysis. "
         }
 
     spending_by_category = {}
@@ -33,12 +33,12 @@ def analyze_transactions(transactions):
         tx_time = datetime.fromisoformat(tx_time_str) if tx_time_str else None
 
         if tx_time:
-            # 규칙 1: 늦은 밤 소비
+            # Rule 1: Late-night spending
             is_late_night = 22 <= tx_time.hour or tx_time.hour < 2
             is_delivery_or_taxi = "FOOD_AND_DRINK" in category or "TRAVEL" in category
             if is_late_night and is_delivery_or_taxi and amount > 15:
                 emotional_spending_events.append(
-                    f"{tx_time.strftime('%m/%d %H:%M')}에 {tx.get('name')}에서 ${amount:,.2f} 결제 (늦은 밤 소비)"
+                    f"{tx_time.strftime('%m/%d %H:%M')} — {tx.get('name')} ${amount:,.2f} (late-night spending)"
                 )
 
             # 규칙 2: 주말 쇼핑
@@ -46,17 +46,17 @@ def analyze_transactions(transactions):
             is_shopping = "SHOPS" in category
             if is_weekend and is_shopping and amount >= 50:
                 emotional_spending_events.append(
-                    f"{tx_time.strftime('%m/%d')} 주말에 {tx.get('name')}에서 ${amount:,.2f} 결제 (주말 충동구매 의심)"
+                    f"{tx_time.strftime('%m/%d')} — {tx.get('name')} ${amount:,.2f} (weekend impulse purchase suspected)"
                 )
 
     # --- for문 끝난 뒤 결과 정리 ---
     top_category = max(spending_by_category, key=spending_by_category.get, default="None")
 
     if emotional_spending_events:
-        analysis_result = f"총 {len(emotional_spending_events)}건의 감정 소비 패턴이 발견되었습니다.\n"
+        analysis_result = f"Detected {len(emotional_spending_events)} emotional-spending pattern(s).\n"
         analysis_result += "\n".join(f"- {event}" for event in emotional_spending_events)
     else:
-        analysis_result = "최근 감정 소비로 의심되는 패턴이 발견되지 않았습니다. 건강한 소비 습관을 유지하고 계시네요!"
+        analysis_result = "No emotional-spending patterns detected. You’re maintaining healthy spending habits!"
 
     return {
         "topCategory": top_category,
